@@ -3,30 +3,55 @@ import numpy as np
 import tensorflow as tf
 import cv2
 
-def Spatial_CNN(input, is_training=False):
+def Spatial_CNN(input, is_training=False,trainable=True,reuse=False):
     '''SPATIAL DENOISING CNN'''
-    with tf.variable_scope('block1'):
-        output = tf.layers.conv2d(input, 128, 3, padding='same', activation=tf.nn.relu)
-    for layers in xrange(2, 19+1):
-        with tf.variable_scope('block%d' % layers):
-            output = tf.layers.conv2d(output, 64, 3, padding='same', name='conv%d' % layers, use_bias=False)
-            output = tf.nn.relu(tf.layers.batch_normalization(output, training=is_training))   
-    with tf.variable_scope('block20'):
-        output = tf.layers.conv2d(output, 3, 3, padding='same',use_bias=False)
-    return input - output
+    with tf.variable_scope('Spatial_CNN',reuse=reuse):
+        with tf.variable_scope('block1'):
+            output = tf.layers.conv2d(input, 128, 3, padding='same',name='conv1d', activation=tf.nn.relu,trainable=trainable,reuse=reuse)
+            print(output.name)
+        for layers in range(2, 19+1):
+            with tf.variable_scope('block%d' % layers):
+                output = tf.layers.conv2d(output, 64, 3, padding='same', name='conv%d' % layers, use_bias=False,trainable=trainable,reuse=reuse)
+                output = tf.nn.relu(tf.layers.batch_normalization(output, training=is_training))   
+        with tf.variable_scope('block20'):
+            output = tf.layers.conv2d(output, 4, 3, padding='same',name='conv20d',use_bias=False,trainable=trainable,reuse=reuse)
+        out = tf.subtract(input,output,name='sub')
+    return out#input - output
+
+
+
 
 def Temp3_CNN(input):
     '''TEMPORAL DENOISING CNN'''
-    input_middle = input[:,:,:,3:6]
-    with tf.variable_scope('temp-block1'):
-        output = tf.layers.conv2d(input, 128, 3, padding='same', activation=tf.nn.leaky_relu)
-    for layers in xrange(2, 19+1):
-        with tf.variable_scope('temp-block%d' % layers):
-            output = tf.layers.conv2d(output, 64, 3, padding='same', name='conv%d' % layers, use_bias=False, activation=tf.nn.leaky_relu)
-    with tf.variable_scope('temp-block20'):
-        output = tf.layers.conv2d(output, 3, 3, padding='same')
-    return input_middle - output
-     
+    choice = 0
+    with tf.variable_scope('Temp3_CNN',reuse=False):
+        input_middle = input[:,:,:,choice*4:(choice+1)*4]
+        with tf.variable_scope('temp-block1'):
+            output = tf.layers.conv2d(input, 128, 3, padding='same', activation=tf.nn.leaky_relu)
+        for layers in range(2, 19+1):
+            with tf.variable_scope('temp-block%d' % layers):
+                output = tf.layers.conv2d(output, 64, 3, padding='same', name='conv%d' % layers, use_bias=False, activation=tf.nn.leaky_relu)
+        with tf.variable_scope('temp-block20'):
+            output = tf.layers.conv2d(output, 4, 3, padding='same')
+        out = tf.subtract(input_middle,output,name='sub')
+    return out
+
+def Spatial_Tmp(input,is_training=False):
+    frm = 4#tf.shape(input)[-1]
+    print(input.shape)
+    input_f = input[:,:,:,0:4]
+    print(input_f.shape)
+    inframes = Spatial_CNN(input_f,is_training=False,trainable=False,reuse=False)#False)#True)
+    for f in range(1,frm):
+        input_f = input[:,:,:,4*f:4*(f+1)]
+        print(input_f.shape)
+        inframes_tmp = Spatial_CNN(input_f,is_training=False, trainable=False,reuse=True) 
+        inframes = tf.concat([inframes,inframes_tmp], axis=-1)
+    print(inframes.shape)
+    out = Temp3_CNN(inframes)
+    return out
+
+        
 class vidcnn(object):
     def __init__(self, sess):
         self.sess = sess
